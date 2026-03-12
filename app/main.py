@@ -26,6 +26,61 @@ st.set_page_config(
     layout="wide"
 )
 
+# ── Custom CSS ────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Center and constrain main content always */
+.main .block-container {
+    max-width: 780px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+}
+
+/* Sidebar top padding fix */
+section[data-testid="stSidebar"] > div:first-child {
+    padding-top: 0rem !important;
+}
+
+/* Disclaimer at bottom */
+.disclaimer-bar {
+    position: fixed;
+    bottom: 2px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 11.5px;
+    z-index: 1000;
+}
+div[data-testid="stChatInput"] {
+    margin-bottom: 6px;
+}
+
+/* Copy button styling */
+.copy-btn {
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 3px 7px;
+    color: #9ca3af;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    transition: all 0.15s ease;
+}
+.copy-btn:hover {
+    background: #f3f4f6;
+    color: #374151;
+    border-color: #d1d5db;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Cache vectorstore and LLM ─────────────────────────────
 @st.cache_resource
 def get_db():
@@ -90,36 +145,60 @@ Retrieved context:
 
     return answer, docs, scores
 
-# ── Score to color + label helper ────────────────────────
+# ── Score to color + label helper ─────────────────────────
 def score_display(score: float):
     pct = round(score * 100)
     if score >= 0.75:
-        color = "#22c55e"   # green
+        color = "#22c55e"
         label = "High"
     elif score >= 0.50:
-        color = "#f59e0b"   # amber
+        color = "#f59e0b"
         label = "Medium"
     else:
-        color = "#ef4444"   # red
+        color = "#ef4444"
         label = "Low"
     return pct, color, label
 
 # ── Initialize session state ──────────────────────────────
-if "chat_history"     not in st.session_state:
-    st.session_state.chat_history     = []
-if "messages"         not in st.session_state:
-    st.session_state.messages         = []
-if "uploaded_files"   not in st.session_state:
-    st.session_state.uploaded_files   = []
+if "chat_history"   not in st.session_state:
+    st.session_state.chat_history   = []
+if "messages"       not in st.session_state:
+    st.session_state.messages       = []
+if "uploaded_files" not in st.session_state:
+    st.session_state.uploaded_files = []
+if "chat_started"   not in st.session_state:
+    st.session_state.chat_started   = False
 
 # ── Sidebar ───────────────────────────────────────────────
 with st.sidebar:
-    st.title("🏥 MediQuery")
-    st.caption("Medical Document Intelligence Assistant")
+    st.markdown("""
+        <div style="display:flex; align-items:center; gap:10px; padding: 4px 0 8px 0;">
+            <span style="font-size:26px;">🏥</span>
+            <div>
+                <div style="font-size:18px; font-weight:700; line-height:1.2;">MediQuery</div>
+                <div style="font-size:11px; color:#6b7280; line-height:1.4;">
+                    Medical Document Intelligence Assistant
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
     st.divider()
 
-    # Knowledge base info
-    st.subheader("📂 Pre-loaded Knowledge Base")
+    # Pre-loaded knowledge base
+    st.markdown("""
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+                <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+            </svg>
+            <span style="font-weight:600; font-size:14px;">Pre-loaded Knowledge Base</span>
+        </div>
+    """, unsafe_allow_html=True)
+
     with st.expander("View 8 FDA Drug Labels"):
         st.markdown(
             "- Metformin\n"
@@ -132,20 +211,31 @@ with st.sidebar:
             "- Omeprazole"
         )
 
-    st.divider()
 
-    # Document upload section
-    st.subheader("📤 Upload Your Own PDF")
+    # Upload section
+    st.markdown("""
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span style="font-weight:600; font-size:14px;">Upload Your Own PDF</span>
+        </div>
+    """, unsafe_allow_html=True)
+
     uploaded_file = st.file_uploader(
         "Upload a medical PDF",
         type=["pdf"],
-        help="Upload any medical document to include it in the knowledge base"
+        help="Upload any medical document to add it to the knowledge base",
+        label_visibility="collapsed"
     )
 
     if uploaded_file is not None:
         if uploaded_file.name not in st.session_state.uploaded_files:
             with st.spinner(f"Processing {uploaded_file.name}..."):
-                # Save to temp file and add to vectorstore
                 with tempfile.NamedTemporaryFile(
                     delete=False,
                     suffix=".pdf",
@@ -155,26 +245,27 @@ with st.sidebar:
                     tmp_path = tmp.name
 
                 chunks_added = add_pdf_to_vectorstore(tmp_path)
-
-                # Clear cached vectorstore so it reloads with new docs
                 get_db.clear()
                 os.unlink(tmp_path)
 
             st.session_state.uploaded_files.append(uploaded_file.name)
-            st.success(f"✅ Added {uploaded_file.name} ({chunks_added} chunks)")
+            st.success(f"Added {uploaded_file.name} ({chunks_added} chunks)")
         else:
-            st.info(f"✅ {uploaded_file.name} already in knowledge base")
+            st.info(f"{uploaded_file.name} already indexed")
 
-    # Show uploaded files list
     if st.session_state.uploaded_files:
         st.write("**Your uploads:**")
         for f in st.session_state.uploaded_files:
-            st.caption(f"📄 {f}")
+            st.caption(f"— {f}")
 
     st.divider()
 
-    # Rebuild index
-    if st.button("🔄 Rebuild Default Index", use_container_width=True):
+    # Rebuild index button — icon inside button via markdown trick
+    if st.button(
+        "↺  Rebuild Default Index",
+        use_container_width=True,
+        help="Re-index all 8 pre-loaded FDA drug PDFs"
+    ):
         with st.spinner("Rebuilding index..."):
             build_vectorstore(
                 os.path.join(os.path.dirname(__file__), '..', 'data', 'pdfs')
@@ -183,56 +274,94 @@ with st.sidebar:
             st.session_state.uploaded_files = []
         st.success("Index rebuilt!")
 
-    # Clear chat
-    if st.button("🗑️ Clear Chat", use_container_width=True):
+    # Clear chat button
+    if st.button(
+        "⊘  Clear Chat",
+        use_container_width=True,
+        help="Clear all messages and start a new conversation"
+    ):
         st.session_state.chat_history = []
         st.session_state.messages     = []
+        st.session_state.chat_started = False
         st.rerun()
 
-    st.divider()
-    st.caption(
-        "⚠️ For educational purposes only.\n"
-        "Not a substitute for professional medical advice."
-    )
-
 # ── Main area ─────────────────────────────────────────────
-st.title("MediQuery 🏥")
-st.caption(
-    "Ask questions about FDA-approved drug labels. "
-    "Answers are grounded in official documentation with confidence scores."
-)
 
-# Example buttons
-st.write("**Quick questions:**")
-col1, col2, col3 = st.columns(3)
-example_query = None
+# Welcome screen — only before chat starts
+if not st.session_state.chat_started:
+    st.markdown("""
+            <div style="text-align:center; padding: 20px 0 10px 0;">
+                <h1 style="font-size:2.2rem; margin-bottom:6px;">MediQuery 🏥</h1>
+                <p style="color:#6b7280; font-size:15px;">
+                    Ask questions about FDA-approved drug labels.<br>
+                    Answers are grounded in official documentation with confidence scores.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
 
-with col1:
-    if st.button("Side effects of Metformin?", use_container_width=True):
-        example_query = "What are the side effects of Metformin?"
-with col2:
-    if st.button("Warfarin + Ibuprofen interaction?", use_container_width=True):
-        example_query = "Can Warfarin and Ibuprofen be taken together?"
-with col3:
-    if st.button("Amoxicillin dose for children?", use_container_width=True):
-        example_query = "What is the recommended dose of Amoxicillin for children?"
+    st.write("**Quick questions:**")
+    col1, col2, col3 = st.columns(3)
+    example_query = None
 
-st.divider()
+    with col1:
+        if st.button("Side effects of Metformin?", use_container_width=True):
+            example_query = "What are the side effects of Metformin?"
+    with col2:
+        if st.button("Warfarin + Ibuprofen interaction?", use_container_width=True):
+            example_query = "Can Warfarin and Ibuprofen be taken together?"
+    with col3:
+        if st.button("Amoxicillin dose for children?", use_container_width=True):
+            example_query = "What is the recommended dose of Amoxicillin for children?"
+
+    st.divider()
+else:
+    example_query = None
 
 # ── Render chat history ───────────────────────────────────
-for msg in st.session_state.messages:
+for i, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        if msg["role"] == "assistant" and msg.get("sources"):
-            with st.expander("📄 Sources & Confidence"):
-                for s in msg["sources"]:
-                    st.markdown(s, unsafe_allow_html=True)
+
+        # Copy button on assistant messages
+        if msg["role"] == "assistant":
+            # Escape backticks and newlines for JS string
+            safe_text = (
+                msg["content"]
+                .replace("\\", "\\\\")
+                .replace("`", "\\`")
+                .replace("\n", "\\n")
+            )
+            st.markdown(
+                f"""<button class="copy-btn"
+                    onclick="navigator.clipboard.writeText(`{safe_text}`).then(()=>{{
+                        this.innerText='✓ Copied';
+                        setTimeout(()=>this.innerHTML=
+                        '<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'11\\' height=\\'11\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'></rect><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'></path></svg> Copy',
+                        1500);
+                    }})">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"
+                         viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy
+                </button>""",
+                unsafe_allow_html=True
+            )
+
+            if msg.get("sources"):
+                with st.expander("Sources & Confidence"):
+                    for s in msg["sources"]:
+                        st.markdown(s, unsafe_allow_html=True)
 
 # ── Chat input ────────────────────────────────────────────
 query = st.chat_input("Ask about any drug in the knowledge base...") or example_query
 
+# ── Handle query ──────────────────────────────────────────
 if query:
-    # Render user message
+    st.session_state.chat_started = True
+
     with st.chat_message("user"):
         st.write(query)
     st.session_state.messages.append({
@@ -240,20 +369,17 @@ if query:
         "content": query
     })
 
-    # Generate response
     with st.chat_message("assistant"):
         with st.spinner("Searching documents..."):
             llm = get_llm()
             db  = get_db()
 
-            # Rephrase if follow-up
             standalone = rephrase_question(
                 query,
                 st.session_state.chat_history,
                 llm
             )
 
-            # Get answer + sources + scores
             answer, source_docs, scores = answer_question(
                 standalone,
                 st.session_state.chat_history,
@@ -263,7 +389,33 @@ if query:
 
         st.write(answer)
 
-        # Build source cards with confidence scores
+        # Copy button for new answer
+        safe_text = (
+            answer
+            .replace("\\", "\\\\")
+            .replace("`", "\\`")
+            .replace("\n", "\\n")
+        )
+        st.markdown(
+            f"""<button class="copy-btn"
+                onclick="navigator.clipboard.writeText(`{safe_text}`).then(()=>{{
+                    this.innerText='✓ Copied';
+                    setTimeout(()=>this.innerHTML=
+                    '<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'11\\' height=\\'11\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'2\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'><rect x=\\'9\\' y=\\'9\\' width=\\'13\\' height=\\'13\\' rx=\\'2\\' ry=\\'2\\'></rect><path d=\\'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\\'></path></svg> Copy',
+                    1500);
+                }})">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                Copy
+            </button>""",
+            unsafe_allow_html=True
+        )
+
+        # Sources
         sources = []
         seen    = set()
         for doc, score in zip(source_docs, scores):
@@ -284,19 +436,29 @@ if query:
                 sources.append(source_line)
 
         if sources:
-            with st.expander("📄 Sources & Confidence"):
+            with st.expander("Sources & Confidence"):
                 for s in sources:
                     st.markdown(s, unsafe_allow_html=True)
 
-    # Save to session state
     st.session_state.messages.append({
         "role":    "assistant",
         "content": answer,
         "sources": sources
     })
 
-    # Update memory
     st.session_state.chat_history.extend([
         HumanMessage(content=query),
         AIMessage(content=answer)
     ])
+
+    st.rerun()
+
+    # Disclaimer — absolute bottom of page
+st.markdown(
+    '<div class="disclaimer-bar" style="text-align:center; color:#9ca3af; '
+    'font-size:11.5px; padding: 8px 0 0 0; margin-top:4px;">'
+    'MediQuery can make mistakes. For educational use only — '
+    'not a substitute for professional medical advice.'
+    '</div>',
+    unsafe_allow_html=True
+)
