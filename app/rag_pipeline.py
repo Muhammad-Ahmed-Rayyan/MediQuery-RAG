@@ -4,8 +4,9 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
+from langchain_community.document_loaders import PyMuPDFLoader
 from document_loader import load_documents, split_documents
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -13,10 +14,13 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 VECTOR_DIR  = os.path.join(os.path.dirname(__file__), '..', 'vectorstore')
 
+def get_embeddings():
+    return HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+
 def build_vectorstore(pdf_folder: str):
     docs   = load_documents(pdf_folder)
     chunks = split_documents(docs)
-    emb    = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    emb    = get_embeddings()
     db     = Chroma.from_documents(
                 chunks, emb,
                 persist_directory=VECTOR_DIR
@@ -25,43 +29,39 @@ def build_vectorstore(pdf_folder: str):
     return db
 
 def load_vectorstore():
-    emb = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    emb = get_embeddings()
     return Chroma(
         persist_directory=VECTOR_DIR,
         embedding_function=emb
     )
 
-PROMPT = PromptTemplate(
-    input_variables=["context", "question"],
-    template="""You are a helpful medical assistant.
-Answer ONLY using the context provided below.
-If the answer is not in the context, say "I don't have enough information in the documents to answer this."
-Do not make up information.
+def add_pdf_to_vectorstore(pdf_path: str):
+    """Add a single uploaded PDF to the existing vectorstore."""
+    loader = PyMuPDFLoader(pdf_path)
+    docs   = loader.load()
 
-Context: {context}
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=100
+    )
+    chunks = splitter.split_documents(docs)
 
-Question: {question}
+    emb = get_embeddings()
+    db  = Chroma(
+        persist_directory=VECTOR_DIR,
+        embedding_function=emb
+    )
+    db.add_documents(chunks)
+    print(f"Added {len(chunks)} chunks from {pdf_path}")
+    return len(chunks)
 
-Answer:"""
-)
+def get_retriever_with_scores(db, query: str, k: int = 4):
+    """Returns (docs, scores) — scores are similarity 0 to 1, higher is better."""
+    results = db.similarity_search_with_relevance_scores(query, k=k)
+    docs    = [r[0] for r in results]
+    scores  = [r[1] for r in results]
+    return docs, scores
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
-
-def get_qa_chain(db):
-    llm = ChatGroq(
-        model="llama-3.1-8b-instant",
-        api_key=os.getenv("GROQ_API_KEY"),
-        temperature=0
-    )
-    retriever = db.as_retriever(search_kwargs={"k": 4})
-
-    chain = (
-        RunnablePassthrough.assign(
-            context=lambda x: format_docs(retriever.invoke(x["question"]))
-        )
-        | PROMPT
-        | llm
-        | StrOutputParser()
-    )
-    return chain, retriever
