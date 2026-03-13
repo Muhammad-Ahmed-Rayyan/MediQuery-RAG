@@ -29,32 +29,44 @@ def build_vectorstore(pdf_folder: str):
     return db
 
 def load_vectorstore():
-    emb = get_embeddings()
-    return Chroma(
-        persist_directory=VECTOR_DIR,
-        embedding_function=emb
-    )
+    if not os.path.exists(VECTOR_DIR):
+        raise FileNotFoundError(
+            "Vectorstore not found. Click 'Rebuild Default Index' in the sidebar to build it."
+        )
+    try:
+        emb = get_embeddings()
+        return Chroma(
+            persist_directory=VECTOR_DIR,
+            embedding_function=emb
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to load vectorstore: {e}")
 
 def add_pdf_to_vectorstore(pdf_path: str):
-    """Add a single uploaded PDF to the existing vectorstore."""
-    loader = PyMuPDFLoader(pdf_path)
-    docs   = loader.load()
+    try:
+        loader = PyMuPDFLoader(pdf_path)
+        docs   = loader.load()
 
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100
-    )
-    chunks = splitter.split_documents(docs)
+        if not docs:
+            raise ValueError("PDF appears to be empty or unreadable.")
 
-    emb = get_embeddings()
-    db  = Chroma(
-        persist_directory=VECTOR_DIR,
-        embedding_function=emb
-    )
-    db.add_documents(chunks)
-    print(f"Added {len(chunks)} chunks from {pdf_path}")
-    return len(chunks)
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=800,
+            chunk_overlap=100
+        )
+        chunks = splitter.split_documents(docs)
+        emb    = get_embeddings()
+        db     = Chroma(
+            persist_directory=VECTOR_DIR,
+            embedding_function=emb
+        )
+        db.add_documents(chunks)
+        print(f"Added {len(chunks)} chunks from {pdf_path}")
+        return len(chunks)
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to process PDF: {e}")
 
 def get_retriever_with_scores(db, query: str, k: int = 4):
     """Returns (docs, scores) — scores are similarity 0 to 1, higher is better."""

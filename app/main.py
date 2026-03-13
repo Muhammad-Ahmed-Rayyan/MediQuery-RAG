@@ -84,7 +84,12 @@ div[data-testid="stChatInput"] {
 # ── Cache vectorstore and LLM ─────────────────────────────
 @st.cache_resource
 def get_db():
-    return load_vectorstore()
+    try:
+        return load_vectorstore()
+    except FileNotFoundError as e:
+        return None
+    except RuntimeError as e:
+        return None
 
 @st.cache_resource
 def get_llm():
@@ -234,24 +239,29 @@ with st.sidebar:
     )
 
     if uploaded_file is not None:
-        if uploaded_file.name not in st.session_state.uploaded_files:
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                with tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=".pdf",
-                    prefix=uploaded_file.name.replace(".pdf", "_")
-                ) as tmp:
-                    tmp.write(uploaded_file.getbuffer())
-                    tmp_path = tmp.name
+            if uploaded_file.name not in st.session_state.uploaded_files:
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            delete=False,
+                            suffix=".pdf",
+                            prefix=uploaded_file.name.replace(".pdf", "_")
+                        ) as tmp:
+                            tmp.write(uploaded_file.getbuffer())
+                            tmp_path = tmp.name
 
-                chunks_added = add_pdf_to_vectorstore(tmp_path)
-                get_db.clear()
-                os.unlink(tmp_path)
+                        chunks_added = add_pdf_to_vectorstore(tmp_path)
+                        get_db.clear()
+                        os.unlink(tmp_path)
+                        st.session_state.uploaded_files.append(uploaded_file.name)
+                        st.success(f"Added {uploaded_file.name} ({chunks_added} chunks)")
 
-            st.session_state.uploaded_files.append(uploaded_file.name)
-            st.success(f"Added {uploaded_file.name} ({chunks_added} chunks)")
-        else:
-            st.info(f"{uploaded_file.name} already indexed")
+                    except RuntimeError as e:
+                        st.error(f"Could not process PDF: {e}")
+                    except Exception as e:
+                        st.error(f"Unexpected error: {e}")
+            else:
+                st.info(f"{uploaded_file.name} already indexed")
 
     if st.session_state.uploaded_files:
         st.write("**Your uploads:**")
@@ -370,26 +380,47 @@ if query:
     })
 
     with st.chat_message("assistant"):
-        with st.spinner("Searching documents..."):
-            llm = get_llm()
-            db  = get_db()
-
-            standalone = rephrase_question(
-                query,
-                st.session_state.chat_history,
-                llm
+        # Check vectorstore exists before doing anything
+        db = get_db()
+        if db is None:
+            st.error(
+                "Knowledge base not found. "
+                "Please click **Rebuild Default Index** in the sidebar first."
             )
+            st.stop()
 
-            answer, source_docs, scores = answer_question(
-                standalone,
-                st.session_state.chat_history,
-                db,
-                llm
-            )
+        try:
+            with st.spinner("Searching documents..."):
+                llm = get_llm()
+
+                standalone = rephrase_question(
+                    query,
+                    st.session_state.chat_history,
+                    llm
+                )
+
+                answer, source_docs, scores = answer_question(
+                    standalone,
+                    st.session_state.chat_history,
+                    db,
+                    llm
+                )
+
+        except Exception as e:
+            error_msg = str(e)
+            if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                st.error("Groq API rate limit reached. Please wait a few seconds and try again.")
+            elif "api_key" in error_msg.lower() or "401" in error_msg:
+                st.error("Invalid or missing Groq API key. Check your .env file.")
+            elif "connection" in error_msg.lower():
+                st.error("Connection error. Check your internet connection and try again.")
+            else:
+                st.error(f"Something went wrong: {error_msg}")
+            st.stop()
 
         st.write(answer)
 
-        # Copy button for new answer
+        # copy button
         safe_text = (
             answer
             .replace("\\", "\\\\")
@@ -415,7 +446,6 @@ if query:
             unsafe_allow_html=True
         )
 
-        # Sources
         sources = []
         seen    = set()
         for doc, score in zip(source_docs, scores):
