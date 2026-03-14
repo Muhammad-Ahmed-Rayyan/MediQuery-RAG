@@ -19,6 +19,11 @@ from rag_pipeline import (
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+# Pull secrets from Streamlit Cloud if available
+import streamlit as st
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+
 # ── Page config ───────────────────────────────────────────
 st.set_page_config(
     page_title="MediQuery",
@@ -85,9 +90,15 @@ div[data-testid="stChatInput"] {
 @st.cache_resource
 def get_db():
     try:
+        db = load_vectorstore()
+        return db
+    except FileNotFoundError:
+        # Auto-build on first run (Streamlit Cloud)
+        with st.spinner("Building knowledge base for first time... (~2 minutes)"):
+            build_vectorstore(
+                os.path.join(os.path.dirname(__file__), '..', 'data', 'pdfs')
+            )
         return load_vectorstore()
-    except FileNotFoundError as e:
-        return None
     except RuntimeError as e:
         return None
 

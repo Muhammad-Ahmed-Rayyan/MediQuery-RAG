@@ -11,6 +11,13 @@ from document_loader import load_documents, split_documents
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+try:
+    import streamlit as st
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+except Exception:
+    pass
+
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 VECTOR_DIR  = os.path.join(os.path.dirname(__file__), '..', 'vectorstore')
 
