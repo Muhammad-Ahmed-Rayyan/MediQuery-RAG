@@ -105,7 +105,7 @@ def get_db():
 @st.cache_resource
 def get_llm():
     return ChatGroq(
-        model="llama-3.1-8b-instant",
+        model="qwen/qwen3.8-27b",
         api_key=os.getenv("GROQ_API_KEY"),
         temperature=0
     )
